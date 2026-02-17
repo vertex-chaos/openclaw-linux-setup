@@ -1,44 +1,66 @@
 # AGENTS.md
 
-## Lint
+## Install
 
-Run ShellCheck on every shell script in the repo:
-
-```bash
-shellcheck -x ./*.sh
-```
-
-Optional syntax check:
+Install local lint/test tooling (Ubuntu/Debian):
 
 ```bash
-bash -n ./*.sh
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends make shellcheck bash diffutils
 ```
 
-## Test
-
-There is no automated integration test suite in this repo.
-
-Use this lightweight consistency check for generated docs:
-
-```bash
-REPO_DIR="$PWD" ./scaffold_openclaw_docs.sh
-git diff -- README.md docs/
-```
-
-The second command should show no unexpected changes if docs are already in sync.
-
-## Run
-
-Bootstrap a host (requires root and a valid Telegram bot token):
+Install OpenClaw on a host (requires root + Telegram token):
 
 ```bash
 export TELEGRAM_BOT_TOKEN='123456:ABC...'
 sudo -E ./openclaw-linux-setup.sh
 ```
 
-Verify service/port after install:
+## Run
+
+Check service health and listener:
 
 ```bash
 systemctl status openclaw-gateway.service --no-pager
 ss -lntup | grep 18789 || true
+```
+
+Follow live logs:
+
+```bash
+journalctl -u openclaw-gateway.service -f
+```
+
+## Lint
+
+Repo lint target:
+
+```bash
+make lint
+```
+
+Equivalent direct command:
+
+```bash
+shellcheck -x ./*.sh
+```
+
+## Troubleshoot
+
+If config has `gateway.auth expected object, received string`:
+
+```bash
+sudo jq '
+  .gateway.auth |= ( if type=="string" then { "mode": . } else . end )
+' /var/lib/openclaw/.openclaw/openclaw.json | sudo tee /var/lib/openclaw/.openclaw/openclaw.json >/dev/null
+
+sudo chown openclaw:openclaw /var/lib/openclaw/.openclaw/openclaw.json
+sudo chmod 600 /var/lib/openclaw/.openclaw/openclaw.json
+sudo systemctl restart openclaw-gateway.service
+```
+
+Run local checks after changes:
+
+```bash
+make test
 ```
