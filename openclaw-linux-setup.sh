@@ -108,7 +108,9 @@ install_openclaw() {
 
   # Common PATH issue after npm global installs (especially under sudo)
   if ! have openclaw && have npm; then
-    export PATH="$(npm prefix -g)/bin:${PATH}"
+    local npm_global_prefix
+    npm_global_prefix="$(npm prefix -g)"
+    export PATH="${npm_global_prefix}/bin:${PATH}"
   fi
 
   have openclaw || die "OpenClaw installed but 'openclaw' not found in PATH. Check npm global bin path."
@@ -286,4 +288,3 @@ main() {
 }
 
 main "$@"
-
