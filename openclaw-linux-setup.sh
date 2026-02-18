@@ -37,6 +37,7 @@ GROUP_POLICY="${GROUP_POLICY:-allowlist}" # open|allowlist|disabled (Telegram gr
 # Paths for secrets (root-owned)
 TG_TOKEN_FILE="${TG_TOKEN_FILE:-${OC_ETC}/telegram.bot_token}"
 GW_TOKEN_FILE="${GW_TOKEN_FILE:-${OC_ETC}/gateway.token}"
+OPENCLAW_BIN="${OPENCLAW_BIN:-}"
 
 # OpenClaw config path (owned by openclaw user)
 OC_CFG_DIR="${OC_HOME}/.openclaw"
@@ -98,7 +99,8 @@ ensure_user_and_dirs() {
 install_openclaw() {
   say "Installing OpenClaw (official installer, skip onboarding)"
   if have openclaw; then
-    echo "openclaw already installed: $(command -v openclaw)"
+    OPENCLAW_BIN="$(command -v openclaw)"
+    echo "openclaw already installed: ${OPENCLAW_BIN}"
     openclaw --version || true
     return 0
   fi
@@ -114,15 +116,16 @@ install_openclaw() {
   fi
 
   have openclaw || die "OpenClaw installed but 'openclaw' not found in PATH. Check npm global bin path."
+  OPENCLAW_BIN="$(command -v openclaw)"
   openclaw --version || true
 }
 
 write_secret_files() {
   say "Writing secret files (root-only)"
   mkdir -p "${OC_ETC}"
-  chmod 755 "${OC_ETC}"
+  chmod 750 "${OC_ETC}"
 
-  # Telegram bot token
+  # Telegram bot token (readable by service user only)
   if [[ -z "${TELEGRAM_BOT_TOKEN:-}" && ! -s "${TG_TOKEN_FILE}" ]]; then
     die "TELEGRAM_BOT_TOKEN not set and ${TG_TOKEN_FILE} missing. Provide TELEGRAM_BOT_TOKEN in sudo env."
   fi
@@ -130,22 +133,29 @@ write_secret_files() {
   if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
     umask 077
     printf "%s\n" "${TELEGRAM_BOT_TOKEN}" > "${TG_TOKEN_FILE}"
-    chmod 600 "${TG_TOKEN_FILE}"
-    chown root:root "${TG_TOKEN_FILE}"
+    chmod 640 "${TG_TOKEN_FILE}"
+    chown root:"${OC_USER}" "${TG_TOKEN_FILE}"
     echo "Wrote Telegram token to ${TG_TOKEN_FILE}"
   else
     echo "Using existing Telegram token file: ${TG_TOKEN_FILE}"
   fi
 
-  # Gateway token
+  # Gateway token (readable by service user only)
   if [[ ! -s "${GW_TOKEN_FILE}" ]]; then
     umask 077
     rand_token > "${GW_TOKEN_FILE}"
-    chmod 600 "${GW_TOKEN_FILE}"
-    chown root:root "${GW_TOKEN_FILE}"
+    chmod 640 "${GW_TOKEN_FILE}"
+    chown root:"${OC_USER}" "${GW_TOKEN_FILE}"
     echo "Generated Gateway token at ${GW_TOKEN_FILE}"
   else
+    chown root:"${OC_USER}" "${GW_TOKEN_FILE}"
+    chmod 640 "${GW_TOKEN_FILE}"
     echo "Using existing Gateway token file: ${GW_TOKEN_FILE}"
+  fi
+
+  if [[ -s "${TG_TOKEN_FILE}" ]]; then
+    chown root:"${OC_USER}" "${TG_TOKEN_FILE}"
+    chmod 640 "${TG_TOKEN_FILE}"
   fi
 }
 
@@ -206,8 +216,8 @@ WorkingDirectory=${OC_HOME}
 Environment=OPENCLAW_CONFIG_PATH=${OC_CFG_FILE}
 Environment=OPENCLAW_HOME=${OC_HOME}
 
-# Secret token loaded from root-only file at start time
-ExecStart=/bin/bash -lc '/usr/local/bin/openclaw gateway --port ${GW_PORT} --bind ${GW_BIND} --auth ${GW_AUTH} --token "\$(cat ${GW_TOKEN_FILE})"'
+# Secret token loaded from root-owned, group-readable file at start time.
+ExecStart=/bin/bash -lc '${OPENCLAW_BIN} gateway --port ${GW_PORT} --bind ${GW_BIND} --auth ${GW_AUTH} --token "\$(cat ${GW_TOKEN_FILE})"'
 
 Restart=always
 RestartSec=3
